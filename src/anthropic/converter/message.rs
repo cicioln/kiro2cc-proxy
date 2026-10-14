@@ -60,7 +60,11 @@ pub(super) fn process_message_content(
                         }
                         "tool_result" => {
                             if let Some(tool_use_id) = block.tool_use_id {
-                                let result_content = extract_tool_result_content(&block.content);
+                                // tool_result 内容中可能夹带 image 块（读取图片文件、浏览器截图等），
+                                // 需提升到同一条消息的 images 一并上送，否则图片会被静默丢弃
+                                let (result_content, result_images) =
+                                    extract_tool_result_content(&block.content);
+                                images.extend(result_images);
                                 let is_error = block.is_error.unwrap_or(false);
 
                                 let mut result = if is_error {
@@ -103,20 +107,45 @@ pub(super) fn get_image_format(media_type: &str) -> Option<String> {
     }
 }
 
-/// 提取工具结果内容
-fn extract_tool_result_content(content: &Option<serde_json::Value>) -> String {
-    match content {
+/// 提取工具结果内容，返回 (文本内容, 图片列表)
+///
+/// Kiro 的 ToolResult 只承载文本，content 数组中的 image 块单独提出，
+/// 由调用方合并进消息的 images 上送。
+pub(super) fn extract_tool_result_content(
+    content: &Option<serde_json::Value>,
+) -> (String, Vec<KiroImage>) {
+    let mut images = Vec::new();
+    let text = match content {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(serde_json::Value::Array(arr)) => {
             let mut parts = Vec::new();
             for item in arr {
                 if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                     parts.push(text.to_string());
+                } else if item.get("type").and_then(|v| v.as_str()) == Some("image") {
+                    // 形如 {"type":"image","source":{"type":"base64","media_type":"image/png","data":"..."}}
+                    let source = item.get("source");
+                    let media_type = source
+                        .and_then(|s| s.get("media_type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    if let Some(format) = get_image_format(media_type)
+                        && let Some(data) =
+                            source.and_then(|s| s.get("data")).and_then(|v| v.as_str())
+                    {
+                        images.push(KiroImage::from_base64(format, data));
+                    } else {
+                        tracing::warn!(
+                            "tool_result 中的图片块被丢弃（不支持的 media_type 或缺少 base64 数据）: media_type={}",
+                            media_type
+                        );
+                    }
                 }
             }
             parts.join("\n")
         }
         Some(v) => v.to_string(),
         None => String::new(),
-    }
+    };
+    (text, images)
 }
