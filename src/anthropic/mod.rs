@@ -36,8 +36,8 @@ pub use converter::{
 };
 pub use router::create_router_with_provider_and_state;
 pub use stream::{
-    client_token_passthrough_enabled, set_client_token_passthrough, set_thinking_as_text,
-    thinking_as_text_enabled,
+    DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE, client_token_display_config, set_client_token_display_config,
+    set_thinking_as_text, thinking_as_text_enabled, validate_client_token_display_scale,
 };
 
 #[cfg(test)]

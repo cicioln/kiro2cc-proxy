@@ -15,7 +15,10 @@ pub use calib::cap_input_tokens_pub;
 #[cfg(test)]
 pub(crate) use calib::scale_for_client_with;
 pub(crate) use calib::{CLIENT_ASSUMED_CONTEXT_WINDOW, scale_for_client};
-pub use calib::{client_token_passthrough_enabled, set_client_token_passthrough};
+pub use calib::{
+    DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE, client_token_display_config, set_client_token_display_config,
+    validate_client_token_display_scale,
+};
 pub use context::StreamContext;
 pub(crate) use echo_guard::ResponseEchoGuard;
 pub(crate) use helpers::generate_fake_signature;

@@ -158,10 +158,17 @@ pub struct Config {
     #[serde(default)]
     pub cache_simulation: CacheSimulationConfig,
 
-    /// 客户端 token 直通（true 时 usage 字段 1:1 上报真实值，不再按
-    /// CLIENT_TOKEN_DISPLAY_SCALE 缩放）。默认 false 维持既有展示缩放。
+    /// 客户端 token 直通（true 时输入/缓存 usage 不做展示缩放）。
+    /// 默认 false，使用 client_token_display_scale；内部统计与计费不受影响。
     #[serde(default)]
     pub client_token_passthrough: bool,
+
+    /// 关闭直通时的客户端输入/缓存 token 展示系数（0 < 系数 <= 1）。
+    #[serde(
+        default = "default_client_token_display_scale",
+        deserialize_with = "deserialize_client_token_display_scale"
+    )]
+    pub client_token_display_scale: f64,
 
     /// Suggestion Mode 输入建议请求放行开关
     ///
@@ -194,6 +201,19 @@ pub struct Config {
     /// 配置文件路径（运行时元数据，不写入 JSON）
     #[serde(skip)]
     config_path: Option<PathBuf>,
+}
+
+fn default_client_token_display_scale() -> f64 {
+    crate::anthropic::DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE
+}
+
+fn deserialize_client_token_display_scale<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let scale = f64::deserialize(deserializer)?;
+    crate::anthropic::validate_client_token_display_scale(scale).map_err(serde::de::Error::custom)?;
+    Ok(scale)
 }
 
 fn default_write_chunking_max_lines() -> u32 {
@@ -270,6 +290,7 @@ impl Default for Config {
             model_cache_ttl_secs: default_model_cache_ttl_secs(),
             cache_simulation: CacheSimulationConfig::default(),
             client_token_passthrough: false,
+            client_token_display_scale: default_client_token_display_scale(),
             forward_suggestion_mode: false,
             thinking_as_text: true,
             write_chunking_max_lines: default_write_chunking_max_lines(),
@@ -332,6 +353,7 @@ impl Config {
     /// - `LOAD_BALANCING_MODE`: 负载均衡模式
     /// - `MODEL_CACHE_TTL_SECS`: /v1/models 动态列表缓存 TTL（秒）
     /// - `CLIENT_TOKEN_PASSTHROUGH`: 客户端 token 直通开关
+    /// - `CLIENT_TOKEN_DISPLAY_SCALE`: 客户端输入/缓存 token 展示系数
     /// - `FORWARD_SUGGESTION_MODE`: Suggestion Mode 输入建议请求放行开关
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = env::var("HOST") {
@@ -377,6 +399,19 @@ impl Config {
             && let Ok(b) = v.parse::<bool>()
         {
             self.client_token_passthrough = b;
+        }
+        if let Ok(v) = env::var("CLIENT_TOKEN_DISPLAY_SCALE") {
+            match v.parse::<f64>() {
+                Ok(scale) => match crate::anthropic::validate_client_token_display_scale(scale) {
+                    Ok(()) => self.client_token_display_scale = scale,
+                    Err(message) => {
+                        tracing::warn!("忽略无效的 CLIENT_TOKEN_DISPLAY_SCALE: {}", message);
+                    }
+                },
+                Err(_) => {
+                    tracing::warn!("忽略无效的 CLIENT_TOKEN_DISPLAY_SCALE: 必须是数值");
+                }
+            }
         }
         if let Ok(v) = env::var("FORWARD_SUGGESTION_MODE")
             && let Ok(b) = v.parse::<bool>()

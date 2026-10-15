@@ -248,27 +248,51 @@ pub async fn set_suggestion_mode(
 }
 
 /// GET /api/admin/config/client-token-passthrough
-/// 获取客户端 token 直通开关
+/// 获取客户端 token 直通开关和已保存的展示系数
 pub async fn get_client_token_passthrough() -> impl IntoResponse {
+    let (enabled, display_scale) = crate::anthropic::client_token_display_config();
     Json(super::types::ClientTokenPassthroughResponse {
-        enabled: crate::anthropic::client_token_passthrough_enabled(),
+        enabled,
+        display_scale,
     })
 }
 
 /// PUT /api/admin/config/client-token-passthrough
-/// 设置客户端 token 直通开关（运行时热切换并持久化到 config.json）
+/// 部分更新客户端 token 展示配置（热更新并持久化，缺失字段保留当前值）
 pub async fn set_client_token_passthrough(
     State(state): State<AdminState>,
     Json(payload): Json<super::types::SetClientTokenPassthroughRequest>,
 ) -> impl IntoResponse {
-    // 持久化到 config.json（重启后保持；persist_lock 防止与其他 PUT 并发覆盖）。
-    // 热更新在锁内执行，保证内存与磁盘写入顺序一致（见 set_suggestion_mode 注释）。
+    if payload.enabled.is_none() && payload.display_scale.is_none() {
+        let error = super::types::AdminErrorResponse::invalid_request(
+            "至少提供 enabled 或 displayScale 中的一项",
+        );
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!(error)),
+        )
+            .into_response();
+    }
+
+    // 在共享持久化锁内读取未提交字段，避免并发部分更新覆盖彼此。
+    // 保持原有契约：先热更新，持久化失败明确返回「运行时已生效」。
     let _guard = state.persist_lock.lock();
-    crate::anthropic::set_client_token_passthrough(payload.enabled);
+    let (current_enabled, current_scale) = crate::anthropic::client_token_display_config();
+    let enabled = payload.enabled.unwrap_or(current_enabled);
+    let display_scale = payload.display_scale.unwrap_or(current_scale);
+    // setter 在发布整份配置前校验系数，非法请求不会部分修改开关或磁盘。
+    if let Err(message) = crate::anthropic::set_client_token_display_config(enabled, display_scale) {
+        let error = super::types::AdminErrorResponse::invalid_request(message);
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!(error)),
+        )
+            .into_response();
+    }
     if let Some(ref config_path) = state.config_path
-        && let Err(e) = persist_client_token_passthrough(config_path, payload.enabled)
+        && let Err(e) = persist_client_token_passthrough(config_path, enabled, display_scale)
     {
-        tracing::error!("持久化客户端 token 直通开关失败: {}", e);
+        tracing::error!("持久化客户端 token 展示配置失败: {}", e);
         let error = super::types::AdminErrorResponse::internal_error("持久化失败，但运行时已生效");
         return (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -277,7 +301,9 @@ pub async fn set_client_token_passthrough(
             .into_response();
     }
 
-    Json(SuccessResponse::new(if payload.enabled {
+    Json(SuccessResponse::new(if payload.display_scale.is_some() {
+        "客户端 token 展示配置已更新"
+    } else if enabled {
         "客户端 token 直通已开启"
     } else {
         "客户端 token 直通已关闭"
@@ -453,13 +479,15 @@ pub async fn set_runtime_config(
     Json(SuccessResponse::new(parts.join("，"))).into_response()
 }
 
-/// 将客户端 token 直通开关写回 config.json
+/// 将客户端 token 直通开关和展示系数在同一次读改写中保存，保留其他配置字段。
 fn persist_client_token_passthrough(
     config_path: &std::path::Path,
     enabled: bool,
+    display_scale: f64,
 ) -> anyhow::Result<()> {
     persist_config_field(config_path, |json| {
         json["clientTokenPassthrough"] = serde_json::Value::Bool(enabled);
+        json["clientTokenDisplayScale"] = serde_json::json!(display_scale);
     })
 }
 
@@ -574,7 +602,12 @@ mod tests {
         let path = dir.join("config.json");
         std::fs::write(&path, r#"{"host":"127.0.0.1"}"#).unwrap();
 
-        persist_client_token_passthrough(&path, true).unwrap();
+        persist_client_token_passthrough(
+            &path,
+            true,
+            crate::anthropic::DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE,
+        )
+        .unwrap();
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
@@ -583,7 +616,12 @@ mod tests {
         );
         assert_eq!(json["host"], "127.0.0.1");
 
-        persist_client_token_passthrough(&path, false).unwrap();
+        persist_client_token_passthrough(
+            &path,
+            false,
+            crate::anthropic::DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE,
+        )
+        .unwrap();
         let json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(

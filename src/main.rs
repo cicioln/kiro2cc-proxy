@@ -65,8 +65,15 @@ async fn main() {
     let mut config = config;
     config.apply_env_overrides();
 
-    // 客户端 token 直通开关（true 时 usage 字段 1:1 上报，见 Issue #44）
-    anthropic::set_client_token_passthrough(config.client_token_passthrough);
+    // 客户端输入/缓存 token 展示配置；直通优先，内部统计与计费不使用此系数。
+    anthropic::set_client_token_display_config(
+        config.client_token_passthrough,
+        config.client_token_display_scale,
+    )
+    .unwrap_or_else(|e| {
+        tracing::error!("客户端 token 展示配置无效: {}", e);
+        std::process::exit(1);
+    });
     anthropic::set_thinking_as_text(config.thinking_as_text);
     anthropic::set_write_chunking_max_lines(config.write_chunking_max_lines);
     if config.write_chunking_max_lines == 0 {

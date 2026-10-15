@@ -156,15 +156,24 @@ export async function setRuntimeConfig(payload: {
   return data
 }
 
-// 获取客户端 token 直通开关
-export async function getClientTokenPassthrough(): Promise<{ enabled: boolean }> {
-  const { data } = await api.get<{ enabled: boolean }>('/config/client-token-passthrough')
+type ClientTokenPassthroughConfig = {
+  enabled: boolean
+  displayScale: number
+}
+
+type ClientTokenPassthroughUpdate =
+  | { enabled: boolean; displayScale?: number }
+  | { enabled?: boolean; displayScale: number }
+
+// 获取客户端 token 直通开关与展示系数
+export async function getClientTokenPassthrough(): Promise<ClientTokenPassthroughConfig> {
+  const { data } = await api.get<ClientTokenPassthroughConfig>('/config/client-token-passthrough')
   return data
 }
 
-// 设置客户端 token 直通开关
-export async function setClientTokenPassthrough(enabled: boolean): Promise<{ success: boolean; message: string }> {
-  const { data } = await api.put<{ success: boolean; message: string }>('/config/client-token-passthrough', { enabled })
+// 部分更新客户端 token 直通开关与展示系数，至少传入一项
+export async function setClientTokenPassthrough(payload: ClientTokenPassthroughUpdate): Promise<{ success: boolean; message: string }> {
+  const { data } = await api.put<{ success: boolean; message: string }>('/config/client-token-passthrough', payload)
   return data
 }
 

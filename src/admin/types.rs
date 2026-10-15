@@ -356,20 +356,26 @@ pub struct SetSuggestionModeRequest {
     pub enabled: bool,
 }
 
-/// 客户端 token 直通开关查询响应
+/// 客户端 token 直通开关与展示系数查询响应
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientTokenPassthroughResponse {
-    /// 是否直通真实 usage（true 1:1 上报，false 按 0.6657 展示缩放）
+    /// 是否直通原始 usage（true 1:1 上报，false 按 display_scale 展示缩放）
     pub enabled: bool,
+    /// 已保存的展示系数，直通开启时仍保留
+    pub display_scale: f64,
 }
 
-/// 设置客户端 token 直通开关请求
+/// 部分更新客户端 token 直通开关与展示系数，至少提交一项
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetClientTokenPassthroughRequest {
-    /// 是否直通真实 usage（true 1:1 上报，false 按 0.6657 展示缩放）
-    pub enabled: bool,
+    /// 不传则保留当前开关，兼容原有 {"enabled": bool} 请求
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// 不传则保留当前系数，不会因切换开关重置为默认值
+    #[serde(default)]
+    pub display_scale: Option<f64>,
 }
 
 /// 思考文本化开关查询响应

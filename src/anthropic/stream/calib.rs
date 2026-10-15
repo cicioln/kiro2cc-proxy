@@ -1,4 +1,5 @@
-//! Token 显示校准：按模型确定 context window 与空响应阈值，CLIENT_TOKEN_DISPLAY_SCALE（0.6657）缩放客户端可见 token 以控制 auto-compact 时机，支持 passthrough 开关。
+//! Token 显示校准：按模型确定 context window 与空响应阈值，支持客户端直通和可配置的输入/缓存 token 展示缩放。
+
 /// 所有模型统一按 100 万 token 上下文窗口计算。
 ///
 /// 历史上按模型分支返回 200K/1M；本变更改为统一 1M，与"contextUsage 本地化"决策一致：
@@ -22,76 +23,69 @@ pub(crate) fn empty_response_oversized_threshold(model: &str) -> i32 {
 /// 导致客户端 agentic 循环卡住。output < 此阈值且无工具调用时，视为近似空响应。
 pub(crate) const NEAR_EMPTY_OUTPUT_THRESHOLD: i32 = 30;
 
-/// 返回给客户端的 token 类字段缩放系数。
+/// 返回给客户端的输入/缓存 token 默认展示系数。
 ///
-/// 仅影响给客户端（如 Claude Code）看到的 usage.input_tokens / cache_* 字段。
-/// 内部计费与 usage_tracker 入库仍写入真实值，admin/user UI 显示不受影响。
+/// 仅影响客户端可见的 usage.input_tokens / cache_* 字段，内部计费与
+/// usage_tracker 入库保持原始口径。所有模型使用同一系数；output_tokens 不缩放。
+/// 配置 `clientTokenDisplayScale` 或管理设置页可覆盖此默认值。
 ///
-/// Claude Code 对所有模型（含 opus 系列）均按 200K 窗口计算 Ctx%，
-/// 实测 82% 触发 auto-compact，即显示值 164,000。
-/// 当前系数下的真实触发点：164,000 / 0.6657 ≈ 246,357。
-///
-/// 实测依据：
-/// - Sonnet 5：Ctx 79% + "3% until auto-compact" → 触发线 82%
-/// - Opus 5：显示 113.4K / Ctx 56%（113,400 / 200,000 = 56.7%，floor 56%）→ 窗口确认 200K
-/// - Opus 4.7：显示 111.7K / Ctx 55%（111,700 / 200,000 = 55.85%，floor 55%）→ 窗口确认 200K
-/// - Opus 4.8：显示 80.0K / Ctx 39%（舍入前略低于 80,000，/200,000 → floor 39%）→ 窗口确认 200K
-/// - Opus 4.6：显示 71.2K / Ctx 35%（71,200 / 200,000 = 35.6%，floor 35%）→ 窗口确认 200K
-///
-/// 统一应用于所有模型，不再按窗口代际区分（原 opus-4.7/4.8/5 大窗口分支已合并）。
-/// 注意：曾按 opus 官方 1M 窗口给其单独放大系数 3.3285，导致新窗口首次会话即
-/// Ctx 100%，已回滚 —— Claude Code 对 opus 的 Ctx% 分母同为 200K，不是 1M。
-const CLIENT_TOKEN_DISPLAY_SCALE: f64 = 0.6657;
+/// 历史实测 Claude Code 按 200K 窗口计算 Ctx%，在约 82%（展示 164,000）时
+/// auto-compact；默认系数对应约 246,357 个未缩放输入 token。
+/// 修改系数或开启直通会改变返回的 usage，依赖这些值的客户端可能提前或延后压缩；
+/// 这不是服务端上下文窗口或自动压缩阈值设置。
+pub const DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE: f64 = 0.6657;
 
-/// 客户端 token 直通开关（config `clientTokenPassthrough`，默认 false）。
+/// 客户端展示配置（直通开关、关闭直通时使用的系数）。
 ///
-/// true 时 `scale_for_client` 跳过展示缩放、1:1 上报真实值——面向按显示值
-/// 计算上下文占用的第三方客户端（Issue #44：缩放导致其统计严重偏低）。
-/// false（默认）维持 0.6657 缩放，Claude Code auto-compact 触发时机不变。
-/// 用 AtomicBool 而非纯 static bool 以支持无 &self 的调用点；
-/// main.rs 启动时按 config 初始化，Admin API（PUT /api/admin/config/client-token-passthrough）
-/// 运行时热切换。
-static CLIENT_TOKEN_PASSTHROUGH: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+/// 用同一把锁读写二者，避免热更新时读取到一半旧、一半新的配置。
+/// main 启动时初始化，Admin API 运行时更新；直通开启不会丢弃已保存的系数。
+static CLIENT_TOKEN_DISPLAY_CONFIG: parking_lot::RwLock<(bool, f64)> =
+    parking_lot::RwLock::new((false, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE));
 
-/// 设置客户端 token 直通开关（main.rs 启动时按 config 调用；Admin API 热切换后也经此更新）。
-pub fn set_client_token_passthrough(enabled: bool) {
-    CLIENT_TOKEN_PASSTHROUGH.store(enabled, std::sync::atomic::Ordering::Relaxed);
+/// 所有配置入口共用的展示系数校验。
+pub fn validate_client_token_display_scale(scale: f64) -> Result<(), &'static str> {
+    if scale.is_finite() && scale > 0.0 && scale <= 1.0 {
+        Ok(())
+    } else {
+        Err("clientTokenDisplayScale 必须是大于 0 且不超过 1 的有限数")
+    }
 }
 
-/// 读取客户端 token 直通开关当前值（Admin API 查询用）。
-pub fn client_token_passthrough_enabled() -> bool {
-    CLIENT_TOKEN_PASSTHROUGH.load(std::sync::atomic::Ordering::Relaxed)
+/// 设置客户端 token 直通和展示系数（启动初始化、Admin API 热更新）。
+pub fn set_client_token_display_config(enabled: bool, display_scale: f64) -> Result<(), &'static str> {
+    validate_client_token_display_scale(display_scale)?;
+    *CLIENT_TOKEN_DISPLAY_CONFIG.write() = (enabled, display_scale);
+    Ok(())
+}
+
+/// 读取当前客户端展示配置的同一份快照。
+pub fn client_token_display_config() -> (bool, f64) {
+    *CLIENT_TOKEN_DISPLAY_CONFIG.read()
 }
 
 /// Claude Code 计算 Ctx% 时假设的上下文窗口（分母）。
 ///
-/// 与 `CLIENT_TOKEN_DISPLAY_SCALE` 同属「客户端展示口径」——客户端对所有模型
-/// （含官方 1M 窗口的 opus 系列）均按 200K 算 Ctx%，实测依据见上方常量注释。
-/// 超窗错误文案里的 maximum 必须取这个值，而不是 `context_window_for_model`：
-/// 后者是上游真实窗口（1M），用它会让「N tokens > M maximum」里 N < M 自相矛盾。
+/// 属于客户端展示口径，与上游真实窗口（1M）分开。
+/// 超窗错误文案里的 maximum 使用该值，并对 N 做 M+1 兜底，避免文案自相矛盾。
 pub(crate) const CLIENT_ASSUMED_CONTEXT_WINDOW: i32 = 200_000;
 
-/// 对客户端展示用的 token 值缩放（向上取整保证非零）。
+/// 对客户端展示用的 token 值缩放（向上取整保证正数不归零）。
 pub(crate) fn scale_for_client(n: i32, _model: &str) -> i32 {
-    scale_for_client_with(
-        n,
-        CLIENT_TOKEN_PASSTHROUGH.load(std::sync::atomic::Ordering::Relaxed),
-    )
+    let (passthrough, display_scale) = client_token_display_config();
+    scale_for_client_with_scale(n, passthrough, display_scale)
 }
 
-/// 按 passthrough 开关缩放（纯函数，测试不触碰全局标志）。
-///
-/// - passthrough=true：1:1 返回真实值（Issue #44 修复路径）
-/// - passthrough=false：维持既有 × 0.6657 展示缩放
+fn scale_for_client_with_scale(n: i32, passthrough: bool, display_scale: f64) -> i32 {
+    if passthrough || n <= 0 {
+        return n.max(0);
+    }
+    ((n as f64) * display_scale).ceil() as i32
+}
+
+/// 现有回归测试使用默认系数，避免修改全局配置干扰并行测试。
+#[cfg(test)]
 pub(crate) fn scale_for_client_with(n: i32, passthrough: bool) -> i32 {
-    if passthrough {
-        return n.max(0);
-    }
-    if n <= 0 {
-        return n.max(0);
-    }
-    ((n as f64) * CLIENT_TOKEN_DISPLAY_SCALE).ceil() as i32
+    scale_for_client_with_scale(n, passthrough, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE)
 }
 
 pub(crate) fn cap_input_tokens(

@@ -178,8 +178,14 @@ export function SettingsPanel({
   const { mutate: setLoadBalancingMode, isPending: isSettingMode } = useSetLoadBalancingMode()
   const { data: suggestionModeData, isLoading: isLoadingSuggestionMode } = useSuggestionMode()
   const { mutate: setSuggestionMode, isPending: isSettingSuggestionMode } = useSetSuggestionMode()
-  const { data: tokenPassthroughData, isLoading: isLoadingTokenPassthrough } = useClientTokenPassthrough()
+  const {
+    data: tokenPassthroughData,
+    isLoading: isLoadingTokenPassthrough,
+    isError: isTokenPassthroughError,
+  } = useClientTokenPassthrough()
   const { mutate: setTokenPassthrough, isPending: isSettingTokenPassthrough } = useSetClientTokenPassthrough()
+  const [tokenDisplayScaleDraft, setTokenDisplayScaleDraft] = useState('')
+  const [editingTokenDisplayScale, setEditingTokenDisplayScale] = useState(false)
   const { data: thinkingAsTextData, isLoading: isLoadingThinkingAsText } = useThinkingAsText()
   const { mutate: setThinkingAsText, isPending: isSettingThinkingAsText } = useSetThinkingAsText()
   const { data: authKeysData, isLoading: isLoadingAuthKeys } = useAuthKeys()
@@ -227,6 +233,41 @@ export function SettingsPanel({
         onError: (e) => toast.error(extractErrorMessage(e)),
       }
     )
+  }
+
+  const tokenPassthroughDisabled =
+    isLoadingTokenPassthrough || isTokenPassthroughError || !tokenPassthroughData || isSettingTokenPassthrough
+  const tokenDisplayScaleValue = Number(tokenDisplayScaleDraft)
+  const isTokenDisplayScaleValid =
+    tokenDisplayScaleDraft.trim() !== '' &&
+    Number.isFinite(tokenDisplayScaleValue) &&
+    tokenDisplayScaleValue > 0 &&
+    tokenDisplayScaleValue <= 1
+
+  const startEditTokenDisplayScale = () => {
+    if (tokenPassthroughDisabled || !tokenPassthroughData) return
+    setTokenDisplayScaleDraft(String(tokenPassthroughData.displayScale))
+    setEditingTokenDisplayScale(true)
+  }
+
+  const cancelEditTokenDisplayScale = () => {
+    setEditingTokenDisplayScale(false)
+    setTokenDisplayScaleDraft('')
+  }
+
+  const saveTokenDisplayScale = () => {
+    if (tokenPassthroughDisabled) return
+    if (!isTokenDisplayScaleValid) {
+      toast.error(t('settings.clientTokenDisplayScaleInvalid'))
+      return
+    }
+    setTokenPassthrough({ displayScale: tokenDisplayScaleValue }, {
+      onSuccess: (d) => {
+        toast.success(d.message)
+        cancelEditTokenDisplayScale()
+      },
+      onError: (e) => toast.error(extractErrorMessage(e)),
+    })
   }
 
   const saveRuntimeField = (field: 'maxRpm' | 'chunkLines' | 'port' | 'proxyUrl') => {
@@ -353,14 +394,60 @@ export function SettingsPanel({
             <Sw
               label={t('settings.clientTokenPassthrough')}
               on={!!tokenPassthroughData?.enabled}
-              disabled={isLoadingTokenPassthrough || isSettingTokenPassthrough}
-              onToggle={() =>
-                setTokenPassthrough(!tokenPassthroughData?.enabled, {
+              disabled={tokenPassthroughDisabled}
+              onToggle={() => {
+                if (tokenPassthroughDisabled || !tokenPassthroughData) return
+                setTokenPassthrough({ enabled: !tokenPassthroughData.enabled }, {
                   onSuccess: (d) => toast.success(d.message),
                   onError: (e) => toast.error(extractErrorMessage(e)),
                 })
-              }
+              }}
             />
+          </Row>
+          <Row label={t('settings.clientTokenDisplayScale')} desc={t('settings.clientTokenDisplayScaleDesc')}>
+            {editingTokenDisplayScale ? (
+              <>
+                <div className="w-[160px]">
+                  <Input
+                    type="number"
+                    step="any"
+                    max={1}
+                    aria-label={t('settings.clientTokenDisplayScale')}
+                    aria-invalid={!isTokenDisplayScaleValid}
+                    aria-describedby={!isTokenDisplayScaleValid ? 'client-token-display-scale-error' : undefined}
+                    autoFocus
+                    disabled={tokenPassthroughDisabled}
+                    value={tokenDisplayScaleDraft}
+                    onChange={(e) => setTokenDisplayScaleDraft(e.target.value)}
+                  />
+                  {!isTokenDisplayScaleValid && (
+                    <div id="client-token-display-scale-error" role="alert" className="mt-1 text-[11px] text-ink-3">
+                      {t('settings.clientTokenDisplayScaleInvalid')}
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" disabled={tokenPassthroughDisabled || !isTokenDisplayScaleValid} onClick={saveTokenDisplayScale}>
+                  {t('common.save')}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={isSettingTokenPassthrough} onClick={cancelEditTokenDisplayScale}>
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className={FIELD_S}>
+                  {isLoadingTokenPassthrough
+                    ? t('common.loading')
+                    : isTokenPassthroughError
+                      ? t('common.loadFailed')
+                      : (tokenPassthroughData?.displayScale ?? '—')}
+                </div>
+                <Button variant="ghost" size="sm" disabled={tokenPassthroughDisabled} onClick={startEditTokenDisplayScale}>
+                  <Pencil />
+                  {t('common.edit')}
+                </Button>
+              </>
+            )}
           </Row>
           <Row label={t('settings.thinkingAsText')} desc={t('settings.thinkingAsTextDesc')}>
             <Sw

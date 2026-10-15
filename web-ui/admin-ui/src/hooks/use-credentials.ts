@@ -220,9 +220,8 @@ export function useSetClientTokenPassthrough() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: setClientTokenPassthrough,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientTokenPassthrough'] })
-    },
+    // 持久化失败时运行时配置也可能已生效，成功或失败都重新读取；等待刷新完成再结束 pending。
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['clientTokenPassthrough'] }),
   })
 }
 
