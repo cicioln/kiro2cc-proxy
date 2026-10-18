@@ -41,7 +41,7 @@ pub const DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE: f64 = 0.6657;
 /// 用量记录或计费。默认关闭（0），可通过配置文件或 Admin API 自定义。
 pub const DEFAULT_CLIENT_CACHE_READ_BASE: i32 = 0;
 
-/// 客户端可见缓存读取量在现有展示口径基础上使用的倍率。
+/// 客户端可见缓存读取值直接按此倍率计算。
 pub const DEFAULT_CLIENT_CACHE_READ_MULTIPLIER: f64 = 1.0;
 
 /// 客户端展示配置（直通开关、关闭直通时使用的系数、模拟缓存读取基数与倍率）。
@@ -159,17 +159,18 @@ pub(crate) fn scale_for_client(n: i32, _model: &str) -> i32 {
     scale_for_client_with_scale(n, passthrough, display_scale)
 }
 
-/// 将真实缓存读取量转换为客户端可见值，应用缓存倍率并追加模拟缓存基数。
+/// Convert the upstream cache-read count for response serialization and append the simulated base.
 ///
-/// 基数位于展示口径（缩放之后），这样设置 `45000` 时客户端始终能看到
-/// `45000 + 真实缓存读取量`，不会被默认的展示缩放再次折算。倍率作用于现有展示口径
-/// 处理后的真实缓存值。该函数只用于响应
-/// 序列化，内部用量记录仍使用未经追加的真实值。
+/// `cacheReadMultiplier` applies directly to the real `cache_read_input_tokens` value,
+/// independently of `clientTokenDisplayScale` and `clientTokenPassthrough`. Results use
+/// floor rounding, so real cache 4000 with multiplier 0.6 is reported as 2400.
+/// Internal usage accounting continues to use the unmodified upstream value.
 pub(crate) fn scale_cache_read_for_client(n: i32, _model: &str) -> i32 {
-    let (passthrough, display_scale, base, multiplier) =
-        client_token_display_config_with_cache_config();
-    let scaled = scale_for_client_with_scale(n, passthrough, display_scale);
-    let scaled = apply_cache_read_multiplier(scaled, multiplier);
+    let (_, _, base, multiplier) = client_token_display_config_with_cache_config();
+    // Apply the configured multiplier to the upstream value itself. The legacy
+    // clientTokenDisplayScale is intentionally not part of this calculation:
+    // real cache 4000 with multiplier 0.6 must be reported as 2400.
+    let scaled = apply_cache_read_multiplier(n, multiplier);
     scaled.saturating_add(base)
 }
 
@@ -177,10 +178,59 @@ fn apply_cache_read_multiplier(n: i32, multiplier: f64) -> i32 {
     if n <= 0 || multiplier == 1.0 {
         return n.max(0);
     }
+    // Use the configured decimal representation when possible. This avoids
+    // binary floating-point surprises such as floor(100 * 0.29) becoming 28.
+    if let Some(scaled) = floor_decimal_product(n, multiplier) {
+        return scaled;
+    }
     ((n as f64) * multiplier)
-        .ceil()
+        .floor()
         .max(0.0)
         .min(i32::MAX as f64) as i32
+}
+
+fn floor_decimal_product(n: i32, multiplier: f64) -> Option<i32> {
+    let mut coefficient_text = multiplier.to_string();
+    let exponent = if let Some(index) = coefficient_text
+        .find(|character| character == 'e' || character == 'E')
+    {
+        let exponent = coefficient_text[index + 1..].parse::<i32>().ok()?;
+        coefficient_text.truncate(index);
+        exponent
+    } else {
+        0
+    };
+    let fractional_digits = coefficient_text
+        .split_once('.')
+        .map(|(_, fraction)| fraction.len() as i32)
+        .unwrap_or(0);
+    let coefficient = coefficient_text
+        .chars()
+        .filter(|character| *character != '.')
+        .collect::<String>()
+        .parse::<u128>()
+        .ok()?;
+    let decimal_places = fractional_digits - exponent;
+
+    if decimal_places <= 0 {
+        let factor = ten_power((-decimal_places) as u32)?;
+        let scaled = (n as u128)
+            .checked_mul(coefficient)?
+            .checked_mul(factor)?;
+        return Some(scaled.min(i32::MAX as u128) as i32);
+    }
+
+    let denominator = ten_power(decimal_places as u32)?;
+    let scaled = (n as u128).checked_mul(coefficient)? / denominator;
+    Some(scaled.min(i32::MAX as u128) as i32)
+}
+
+fn ten_power(power: u32) -> Option<u128> {
+    let mut value = 1u128;
+    for _ in 0..power {
+        value = value.checked_mul(10)?;
+    }
+    Some(value)
 }
 
 fn scale_for_client_with_scale(n: i32, passthrough: bool, display_scale: f64) -> i32 {
@@ -209,13 +259,11 @@ pub(crate) fn scale_cache_read_for_client_with(
 #[cfg(test)]
 pub(crate) fn scale_cache_read_for_client_with_multiplier(
     n: i32,
-    passthrough: bool,
+    _passthrough: bool,
     cache_read_base: i32,
     cache_read_multiplier: f64,
 ) -> i32 {
-    let scaled =
-        scale_for_client_with_scale(n, passthrough, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE);
-    apply_cache_read_multiplier(scaled, cache_read_multiplier).saturating_add(cache_read_base)
+    apply_cache_read_multiplier(n, cache_read_multiplier).saturating_add(cache_read_base)
 }
 
 pub(crate) fn cap_input_tokens(

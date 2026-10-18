@@ -740,7 +740,7 @@
     "cacheReadBaseDesc": "Only adds to the cache_read_input_tokens value returned to clients; upstream requests, internal usage, and billing are unchanged. With 45000 configured, clients see 45000 plus the real cache read.",
     "cacheReadBaseInvalid": "Enter an integer between 0 and 2147483647.",
     "cacheReadMultiplier": "Real Cache Read Multiplier",
-    "cacheReadMultiplierDesc": "After the existing client display rules are applied, multiply the real cache_read_input_tokens value by this factor, then add the simulated cache-read base. Default: 1; setting 2 doubles the displayed real cache read.",
+    "cacheReadMultiplierDesc": "Apply this factor directly to the upstream cache_read_input_tokens value, then add the simulated cache-read base. Default: 1; for example, real cache 4000 with multiplier 0.6 is reported as 2400 using floor rounding.",
     "cacheReadMultiplierInvalid": "Enter a finite number greater than or equal to 0.",
     "maxRpmPerCredential": "Per-Account RPM Limit",
     "maxRpmPerCredentialDesc": "Maximum requests per minute for each account; hot-applied on save (0 = unlimited).",

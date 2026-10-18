@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scale_cache_read_adds_display_base_after_scaling() {
+    fn test_scale_cache_read_applies_multiplier_to_real_value() {
         assert_eq!(scale_cache_read_for_client_with(10_000, false, 45_000), 51_657);
         assert_eq!(scale_cache_read_for_client_with(10_000, true, 45_000), 55_000);
         assert_eq!(scale_cache_read_for_client_with(0, true, 45_000), 45_000);
@@ -256,7 +256,19 @@ mod tests {
         );
         assert_eq!(
             scale_cache_read_for_client_with_multiplier(5_000, false, 0, 2.0),
-            6_658
+            10_000
+        );
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(4_000, false, 0, 0.6),
+            2_400
+        );
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(4_000, false, 100, 0.6),
+            2_500
+        );
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(100, false, 0, 0.29),
+            29
         );
         assert_eq!(
             scale_cache_read_for_client_with_multiplier(5_000, true, 0, 0.0),

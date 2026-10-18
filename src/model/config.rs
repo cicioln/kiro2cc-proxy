@@ -180,7 +180,7 @@ pub struct Config {
     )]
     pub client_cache_read_base: i32,
 
-    /// 客户端可见真实缓存读取在现有展示口径基础上使用的倍率。
+    /// 客户端可见真实缓存读取值直接按此倍率计算，再追加 cacheReadBase。
     #[serde(
         default = "default_client_cache_read_multiplier",
         rename = "cacheReadMultiplier",

@@ -366,7 +366,7 @@ pub struct ClientTokenPassthroughResponse {
     pub display_scale: f64,
     /// 客户端可见的模拟缓存读取基数（展示 token）。
     pub cache_read_base: i32,
-    /// 真实缓存读取在现有展示口径基础上使用的倍率。
+    /// 真实缓存读取值直接按此倍率计算，再追加 cacheReadBase。
     pub cache_read_multiplier: f64,
 }
 
