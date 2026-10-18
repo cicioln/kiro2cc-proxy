@@ -3,8 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::anthropic::stream::{
-        SseEvent, SseStateManager, StreamContext, count_token_chars, scale_for_client,
-        scale_for_client_with, split_thinking_and_visible, tokens_from_chars,
+        SseEvent, SseStateManager, StreamContext, count_token_chars, scale_cache_read_for_client_with,
+        scale_for_client, scale_for_client_with, split_thinking_and_visible, tokens_from_chars,
     };
     use crate::cache::PromptCacheUsage;
     use serde_json::json;
@@ -242,6 +242,13 @@ mod tests {
         assert_eq!(scale_for_client_with(-5, true), 0);
         // i32::MAX 不溢出
         assert_eq!(scale_for_client_with(i32::MAX, true), i32::MAX);
+    }
+
+    #[test]
+    fn test_scale_cache_read_adds_display_base_after_scaling() {
+        assert_eq!(scale_cache_read_for_client_with(10_000, false, 45_000), 51_657);
+        assert_eq!(scale_cache_read_for_client_with(10_000, true, 45_000), 55_000);
+        assert_eq!(scale_cache_read_for_client_with(0, true, 45_000), 45_000);
     }
 
     #[test]

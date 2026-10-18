@@ -14,10 +14,16 @@ mod thinking_text;
 pub use calib::cap_input_tokens_pub;
 #[cfg(test)]
 pub(crate) use calib::scale_for_client_with;
-pub(crate) use calib::{CLIENT_ASSUMED_CONTEXT_WINDOW, scale_for_client};
+#[cfg(test)]
+pub(crate) use calib::scale_cache_read_for_client_with;
+pub(crate) use calib::{
+    CLIENT_ASSUMED_CONTEXT_WINDOW, scale_cache_read_for_client, scale_for_client,
+};
 pub use calib::{
-    DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE, client_token_display_config, set_client_token_display_config,
-    validate_client_token_display_scale,
+    DEFAULT_CLIENT_CACHE_READ_BASE, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE,
+    client_token_display_config, client_token_display_config_with_cache_base,
+    set_client_token_display_config, set_client_token_display_config_with_base,
+    validate_client_cache_read_base, validate_client_token_display_scale,
 };
 pub use context::StreamContext;
 pub(crate) use echo_guard::ResponseEchoGuard;

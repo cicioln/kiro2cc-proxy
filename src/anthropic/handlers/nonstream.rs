@@ -672,7 +672,7 @@ pub(crate) async fn handle_non_stream_request(
             "input_tokens": super::super::stream::scale_for_client(report_input, model),
             "output_tokens": output_tokens,
             "cache_creation_input_tokens": super::super::stream::scale_for_client(report_cache_creation, model),
-            "cache_read_input_tokens": super::super::stream::scale_for_client(report_cache_read, model),
+            "cache_read_input_tokens": super::super::stream::scale_cache_read_for_client(report_cache_read, model),
             "cache_creation": {
                 "ephemeral_5m_input_tokens": super::super::stream::scale_for_client(report_creation_5m, model),
                 "ephemeral_1h_input_tokens": super::super::stream::scale_for_client(report_creation_1h, model)

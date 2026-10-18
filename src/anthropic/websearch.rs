@@ -259,7 +259,7 @@ fn generate_websearch_events(
                     "input_tokens": crate::anthropic::stream::scale_for_client(input_tokens, model),
                     "output_tokens": 0,
                     "cache_creation_input_tokens": 0,
-                    "cache_read_input_tokens": 0
+                    "cache_read_input_tokens": crate::anthropic::scale_cache_read_for_client(0, model)
                 }
             }
         }),
@@ -397,7 +397,10 @@ fn generate_websearch_events(
                 "stop_sequence": null
             },
             "usage": {
-                "output_tokens": output_tokens
+                "input_tokens": crate::anthropic::stream::scale_for_client(input_tokens, model),
+                "output_tokens": output_tokens,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": crate::anthropic::scale_cache_read_for_client(0, model)
             }
         }),
     ));

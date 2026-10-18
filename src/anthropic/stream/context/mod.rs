@@ -9,7 +9,7 @@ use crate::cache::PromptCacheUsage;
 use crate::kiro::model::events::Event;
 use crate::model::usage::UsageTracker;
 
-use super::calib::{cap_input_tokens, scale_for_client};
+use super::calib::{cap_input_tokens, scale_cache_read_for_client, scale_for_client};
 use super::helpers::count_token_chars;
 use super::state::{SseEvent, SseStateManager};
 use super::thinking::{
@@ -240,7 +240,7 @@ impl StreamContext {
                     "input_tokens": scale_for_client(non_cached, &self.model),
                     "output_tokens": 1,
                     "cache_creation_input_tokens": scale_for_client(cache_creation, &self.model),
-                    "cache_read_input_tokens": scale_for_client(cache_read, &self.model)
+                    "cache_read_input_tokens": scale_cache_read_for_client(cache_read, &self.model)
                 }
             }
         })

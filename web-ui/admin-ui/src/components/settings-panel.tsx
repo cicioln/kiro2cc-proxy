@@ -186,6 +186,8 @@ export function SettingsPanel({
   const { mutate: setTokenPassthrough, isPending: isSettingTokenPassthrough } = useSetClientTokenPassthrough()
   const [tokenDisplayScaleDraft, setTokenDisplayScaleDraft] = useState('')
   const [editingTokenDisplayScale, setEditingTokenDisplayScale] = useState(false)
+  const [cacheReadBaseDraft, setCacheReadBaseDraft] = useState('')
+  const [editingCacheReadBase, setEditingCacheReadBase] = useState(false)
   const { data: thinkingAsTextData, isLoading: isLoadingThinkingAsText } = useThinkingAsText()
   const { mutate: setThinkingAsText, isPending: isSettingThinkingAsText } = useSetThinkingAsText()
   const { data: authKeysData, isLoading: isLoadingAuthKeys } = useAuthKeys()
@@ -244,6 +246,12 @@ export function SettingsPanel({
     tokenDisplayScaleValue > 0 &&
     tokenDisplayScaleValue <= 1
 
+  const cacheReadBaseValue = Number(cacheReadBaseDraft)
+  const isCacheReadBaseValid =
+    /^\d+$/.test(cacheReadBaseDraft.trim()) &&
+    Number.isSafeInteger(cacheReadBaseValue) &&
+    cacheReadBaseValue <= 2147483647
+
   const startEditTokenDisplayScale = () => {
     if (tokenPassthroughDisabled || !tokenPassthroughData) return
     setTokenDisplayScaleDraft(String(tokenPassthroughData.displayScale))
@@ -265,6 +273,31 @@ export function SettingsPanel({
       onSuccess: (d) => {
         toast.success(d.message)
         cancelEditTokenDisplayScale()
+      },
+      onError: (e) => toast.error(extractErrorMessage(e)),
+    })
+  }
+
+  const startEditCacheReadBase = () => {
+    if (tokenPassthroughDisabled || !tokenPassthroughData) return
+    setCacheReadBaseDraft(String(tokenPassthroughData.cacheReadBase ?? 0))
+    setEditingCacheReadBase(true)
+  }
+
+  const cancelEditCacheReadBase = () => {
+    setEditingCacheReadBase(false)
+    setCacheReadBaseDraft('')
+  }
+
+  const saveCacheReadBase = () => {
+    if (tokenPassthroughDisabled || !isCacheReadBaseValid) {
+      toast.error(t('settings.cacheReadBaseInvalid'))
+      return
+    }
+    setTokenPassthrough({ cacheReadBase: cacheReadBaseValue }, {
+      onSuccess: (d) => {
+        toast.success(d.message)
+        cancelEditCacheReadBase()
       },
       onError: (e) => toast.error(extractErrorMessage(e)),
     })
@@ -443,6 +476,52 @@ export function SettingsPanel({
                       : (tokenPassthroughData?.displayScale ?? '—')}
                 </div>
                 <Button variant="ghost" size="sm" disabled={tokenPassthroughDisabled} onClick={startEditTokenDisplayScale}>
+                  <Pencil />
+                  {t('common.edit')}
+                </Button>
+              </>
+            )}
+          </Row>
+          <Row label={t('settings.cacheReadBase')} desc={t('settings.cacheReadBaseDesc')}>
+            {editingCacheReadBase ? (
+              <>
+                <div className="w-[160px]">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={2147483647}
+                    step={1}
+                    aria-label={t('settings.cacheReadBase')}
+                    aria-invalid={!isCacheReadBaseValid}
+                    aria-describedby={!isCacheReadBaseValid ? 'cache-read-base-error' : undefined}
+                    autoFocus
+                    disabled={tokenPassthroughDisabled}
+                    value={cacheReadBaseDraft}
+                    onChange={(e) => setCacheReadBaseDraft(e.target.value)}
+                  />
+                  {!isCacheReadBaseValid && (
+                    <div id="cache-read-base-error" role="alert" className="mt-1 text-[11px] text-ink-3">
+                      {t('settings.cacheReadBaseInvalid')}
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" disabled={tokenPassthroughDisabled || !isCacheReadBaseValid} onClick={saveCacheReadBase}>
+                  {t('common.save')}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={isSettingTokenPassthrough} onClick={cancelEditCacheReadBase}>
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className={FIELD_S}>
+                  {isLoadingTokenPassthrough
+                    ? t('common.loading')
+                    : isTokenPassthroughError
+                      ? t('common.loadFailed')
+                      : (tokenPassthroughData?.cacheReadBase ?? 0)}
+                </div>
+                <Button variant="ghost" size="sm" disabled={tokenPassthroughDisabled} onClick={startEditCacheReadBase}>
                   <Pencil />
                   {t('common.edit')}
                 </Button>

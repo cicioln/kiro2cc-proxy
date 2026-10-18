@@ -356,7 +356,7 @@ pub struct SetSuggestionModeRequest {
     pub enabled: bool,
 }
 
-/// 客户端 token 直通开关与展示系数查询响应
+/// 客户端 token 展示与模拟缓存读取配置查询响应
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientTokenPassthroughResponse {
@@ -364,9 +364,11 @@ pub struct ClientTokenPassthroughResponse {
     pub enabled: bool,
     /// 已保存的展示系数，直通开启时仍保留
     pub display_scale: f64,
+    /// 客户端可见的模拟缓存读取基数（展示 token）。
+    pub cache_read_base: i32,
 }
 
-/// 部分更新客户端 token 直通开关与展示系数，至少提交一项
+/// 部分更新客户端 token 展示与模拟缓存读取配置，至少提交一项
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetClientTokenPassthroughRequest {
@@ -376,6 +378,10 @@ pub struct SetClientTokenPassthroughRequest {
     /// 不传则保留当前系数，不会因切换开关重置为默认值
     #[serde(default)]
     pub display_scale: Option<f64>,
+    /// 客户端可见的模拟缓存读取基数；必须是大于等于 0 的整数。
+    #[serde(default)]
+    #[serde(alias = "clientCacheReadBase")]
+    pub cache_read_base: Option<i32>,
 }
 
 /// 思考文本化开关查询响应

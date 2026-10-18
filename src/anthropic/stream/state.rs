@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use serde_json::json;
 
-use super::calib::{NEAR_EMPTY_OUTPUT_THRESHOLD, scale_for_client};
+use super::calib::{NEAR_EMPTY_OUTPUT_THRESHOLD, scale_cache_read_for_client, scale_for_client};
 
 /// SSE 事件
 #[derive(Debug, Clone)]
@@ -363,7 +363,7 @@ impl SseStateManager {
             if let Some(v) = cache_read_input_tokens {
                 usage.insert(
                     "cache_read_input_tokens".into(),
-                    json!(scale_for_client(v, model)),
+                    json!(scale_cache_read_for_client(v, model)),
                 );
             }
             // 与非流式响应对齐：输出 ephemeral 5m/1h 嵌套字段

@@ -36,9 +36,13 @@ pub use converter::{
 };
 pub use router::create_router_with_provider_and_state;
 pub use stream::{
-    DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE, client_token_display_config, set_client_token_display_config,
-    set_thinking_as_text, thinking_as_text_enabled, validate_client_token_display_scale,
+    DEFAULT_CLIENT_CACHE_READ_BASE, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE,
+    client_token_display_config, client_token_display_config_with_cache_base,
+    set_client_token_display_config, set_client_token_display_config_with_base,
+    set_thinking_as_text, thinking_as_text_enabled, validate_client_cache_read_base,
+    validate_client_token_display_scale,
 };
+pub(crate) use stream::scale_cache_read_for_client;
 
 #[cfg(test)]
 pub(crate) use converter::convert_request;

@@ -266,7 +266,10 @@ pub(crate) fn suggestion_mode_response(stream: bool) -> axum::response::Response
                         "input_tokens": 0,
                         "output_tokens": 1,
                         "cache_creation_input_tokens": 0,
-                        "cache_read_input_tokens": 0
+                        "cache_read_input_tokens": crate::anthropic::stream::scale_cache_read_for_client(
+                            0,
+                            "suggestion",
+                        )
                     }
                 })
                 .to_string(),
@@ -296,7 +299,10 @@ pub(crate) fn suggestion_mode_response(stream: bool) -> axum::response::Response
                         "input_tokens": 0,
                         "output_tokens": 1,
                         "cache_creation_input_tokens": 0,
-                        "cache_read_input_tokens": 0
+                        "cache_read_input_tokens": crate::anthropic::stream::scale_cache_read_for_client(
+                            0,
+                            "suggestion",
+                        )
                     }
                 }
             }),

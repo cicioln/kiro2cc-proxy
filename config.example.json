@@ -5,5 +5,6 @@
   "region": "us-east-1",
   "adminPsw": "sk-admin-your-secret-key",
   "clientTokenPassthrough": false,
-  "clientTokenDisplayScale": 0.6657
+  "clientTokenDisplayScale": 0.6657,
+  "cacheReadBase": 0
 }

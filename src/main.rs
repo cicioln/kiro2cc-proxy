@@ -66,9 +66,10 @@ async fn main() {
     config.apply_env_overrides();
 
     // 客户端输入/缓存 token 展示配置；直通优先，内部统计与计费不使用此系数。
-    anthropic::set_client_token_display_config(
+    anthropic::set_client_token_display_config_with_base(
         config.client_token_passthrough,
         config.client_token_display_scale,
+        config.client_cache_read_base,
     )
     .unwrap_or_else(|e| {
         tracing::error!("客户端 token 展示配置无效: {}", e);
@@ -94,6 +95,12 @@ async fn main() {
     if config.client_token_passthrough {
         tracing::info!(
             "已启用客户端 token 直通（clientTokenPassthrough），usage 字段将 1:1 上报真实值"
+        );
+    }
+    if config.client_cache_read_base > 0 {
+        tracing::info!(
+            "已启用客户端模拟缓存读取基数（cacheReadBase={}），仅影响返回给客户端的 usage 展示",
+            config.client_cache_read_base
         );
     }
 
