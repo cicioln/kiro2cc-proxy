@@ -6,5 +6,6 @@
   "adminPsw": "sk-admin-your-secret-key",
   "clientTokenPassthrough": false,
   "clientTokenDisplayScale": 0.6657,
-  "cacheReadBase": 0
+  "cacheReadBase": 0,
+  "cacheReadMultiplier": 1
 }

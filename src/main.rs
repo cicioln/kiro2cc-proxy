@@ -65,11 +65,12 @@ async fn main() {
     let mut config = config;
     config.apply_env_overrides();
 
-    // 客户端输入/缓存 token 展示配置；直通优先，内部统计与计费不使用此系数。
-    anthropic::set_client_token_display_config_with_base(
+    // 客户端输入/缓存 token 展示配置；直通优先，内部统计与计费不使用这些展示参数。
+    anthropic::set_client_token_display_config_with_base_and_multiplier(
         config.client_token_passthrough,
         config.client_token_display_scale,
         config.client_cache_read_base,
+        config.client_cache_read_multiplier,
     )
     .unwrap_or_else(|e| {
         tracing::error!("客户端 token 展示配置无效: {}", e);
@@ -101,6 +102,12 @@ async fn main() {
         tracing::info!(
             "已启用客户端模拟缓存读取基数（cacheReadBase={}），仅影响返回给客户端的 usage 展示",
             config.client_cache_read_base
+        );
+    }
+    if config.client_cache_read_multiplier != anthropic::DEFAULT_CLIENT_CACHE_READ_MULTIPLIER {
+        tracing::info!(
+            "已启用客户端真实缓存读取倍率（cacheReadMultiplier={}），仅影响返回给客户端的 usage 展示",
+            config.client_cache_read_multiplier
         );
     }
 

@@ -160,10 +160,11 @@ type ClientTokenPassthroughConfig = {
   enabled: boolean
   displayScale: number
   cacheReadBase: number
+  cacheReadMultiplier: number
 }
 
 type ClientTokenPassthroughUpdate =
-  | { enabled?: boolean; displayScale?: number; cacheReadBase?: number }
+  | { enabled?: boolean; displayScale?: number; cacheReadBase?: number; cacheReadMultiplier?: number }
 
 // 获取客户端 token 直通开关与展示系数
 export async function getClientTokenPassthrough(): Promise<ClientTokenPassthroughConfig> {

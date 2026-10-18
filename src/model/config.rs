@@ -180,6 +180,16 @@ pub struct Config {
     )]
     pub client_cache_read_base: i32,
 
+    /// 客户端可见真实缓存读取在现有展示口径基础上使用的倍率。
+    #[serde(
+        default = "default_client_cache_read_multiplier",
+        rename = "cacheReadMultiplier",
+        alias = "clientCacheReadMultiplier",
+        alias = "simulatedCacheMultiplier",
+        deserialize_with = "deserialize_client_cache_read_multiplier"
+    )]
+    pub client_cache_read_multiplier: f64,
+
     /// Suggestion Mode 输入建议请求放行开关
     ///
     /// Claude Code 每轮主对话后会自动发起输入建议请求（末条消息以 `[SUGGESTION MODE`
@@ -221,6 +231,10 @@ fn default_client_cache_read_base() -> i32 {
     crate::anthropic::DEFAULT_CLIENT_CACHE_READ_BASE
 }
 
+fn default_client_cache_read_multiplier() -> f64 {
+    crate::anthropic::DEFAULT_CLIENT_CACHE_READ_MULTIPLIER
+}
+
 fn deserialize_client_token_display_scale<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -237,6 +251,16 @@ where
     let base = i32::deserialize(deserializer)?;
     crate::anthropic::validate_client_cache_read_base(base).map_err(serde::de::Error::custom)?;
     Ok(base)
+}
+
+fn deserialize_client_cache_read_multiplier<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let multiplier = f64::deserialize(deserializer)?;
+    crate::anthropic::validate_client_cache_read_multiplier(multiplier)
+        .map_err(serde::de::Error::custom)?;
+    Ok(multiplier)
 }
 
 fn default_write_chunking_max_lines() -> u32 {
@@ -315,6 +339,7 @@ impl Default for Config {
             client_token_passthrough: false,
             client_token_display_scale: default_client_token_display_scale(),
             client_cache_read_base: default_client_cache_read_base(),
+            client_cache_read_multiplier: default_client_cache_read_multiplier(),
             forward_suggestion_mode: false,
             thinking_as_text: true,
             write_chunking_max_lines: default_write_chunking_max_lines(),
@@ -379,6 +404,7 @@ impl Config {
     /// - `CLIENT_TOKEN_PASSTHROUGH`: 客户端 token 直通开关
     /// - `CLIENT_TOKEN_DISPLAY_SCALE`: 客户端输入/缓存 token 展示系数
     /// - `CLIENT_CACHE_READ_BASE`: 客户端展示的模拟缓存读取基数
+    /// - `CLIENT_CACHE_READ_MULTIPLIER`: 客户端展示的真实缓存读取倍率
     /// - `FORWARD_SUGGESTION_MODE`: Suggestion Mode 输入建议请求放行开关
     pub fn apply_env_overrides(&mut self) {
         if let Ok(v) = env::var("HOST") {
@@ -445,6 +471,19 @@ impl Config {
                     Err(message) => tracing::warn!("忽略无效的 CLIENT_CACHE_READ_BASE: {}", message),
                 },
                 Err(_) => tracing::warn!("忽略无效的 CLIENT_CACHE_READ_BASE: 必须是整数"),
+            }
+        }
+        if let Ok(v) = env::var("CLIENT_CACHE_READ_MULTIPLIER") {
+            match v.parse::<f64>() {
+                Ok(multiplier) => {
+                    match crate::anthropic::validate_client_cache_read_multiplier(multiplier) {
+                        Ok(()) => self.client_cache_read_multiplier = multiplier,
+                        Err(message) => {
+                            tracing::warn!("忽略无效的 CLIENT_CACHE_READ_MULTIPLIER: {}", message)
+                        },
+                    }
+                },
+                Err(_) => tracing::warn!("忽略无效的 CLIENT_CACHE_READ_MULTIPLIER: 必须是数字"),
             }
         }
         if let Ok(v) = env::var("FORWARD_SUGGESTION_MODE")
@@ -532,6 +571,11 @@ mod tests {
         let config: Config = serde_json::from_str(r#"{"clientCacheReadBase": 12}"#).unwrap();
         assert_eq!(config.client_cache_read_base, 12);
         assert!(serde_json::from_str::<Config>(r#"{"cacheReadBase": -1}"#).is_err());
+        let config: Config = serde_json::from_str(r#"{"cacheReadMultiplier": 2.5}"#).unwrap();
+        assert_eq!(config.client_cache_read_multiplier, 2.5);
+        assert_eq!(Config::default().client_cache_read_multiplier, 1.0);
+        assert!(serde_json::from_str::<Config>(r#"{"cacheReadMultiplier": -1}"#).is_err());
+        assert!(serde_json::from_str::<Config>(r#"{"cacheReadMultiplier": "2"}"#).is_err());
     }
 
     #[test]

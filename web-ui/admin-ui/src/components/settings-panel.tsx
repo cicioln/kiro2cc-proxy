@@ -188,6 +188,8 @@ export function SettingsPanel({
   const [editingTokenDisplayScale, setEditingTokenDisplayScale] = useState(false)
   const [cacheReadBaseDraft, setCacheReadBaseDraft] = useState('')
   const [editingCacheReadBase, setEditingCacheReadBase] = useState(false)
+  const [cacheReadMultiplierDraft, setCacheReadMultiplierDraft] = useState('')
+  const [editingCacheReadMultiplier, setEditingCacheReadMultiplier] = useState(false)
   const { data: thinkingAsTextData, isLoading: isLoadingThinkingAsText } = useThinkingAsText()
   const { mutate: setThinkingAsText, isPending: isSettingThinkingAsText } = useSetThinkingAsText()
   const { data: authKeysData, isLoading: isLoadingAuthKeys } = useAuthKeys()
@@ -252,6 +254,12 @@ export function SettingsPanel({
     Number.isSafeInteger(cacheReadBaseValue) &&
     cacheReadBaseValue <= 2147483647
 
+  const cacheReadMultiplierValue = Number(cacheReadMultiplierDraft)
+  const isCacheReadMultiplierValid =
+    cacheReadMultiplierDraft.trim() !== '' &&
+    Number.isFinite(cacheReadMultiplierValue) &&
+    cacheReadMultiplierValue >= 0
+
   const startEditTokenDisplayScale = () => {
     if (tokenPassthroughDisabled || !tokenPassthroughData) return
     setTokenDisplayScaleDraft(String(tokenPassthroughData.displayScale))
@@ -298,6 +306,31 @@ export function SettingsPanel({
       onSuccess: (d) => {
         toast.success(d.message)
         cancelEditCacheReadBase()
+      },
+      onError: (e) => toast.error(extractErrorMessage(e)),
+    })
+  }
+
+  const startEditCacheReadMultiplier = () => {
+    if (tokenPassthroughDisabled || !tokenPassthroughData) return
+    setCacheReadMultiplierDraft(String(tokenPassthroughData.cacheReadMultiplier ?? 1))
+    setEditingCacheReadMultiplier(true)
+  }
+
+  const cancelEditCacheReadMultiplier = () => {
+    setEditingCacheReadMultiplier(false)
+    setCacheReadMultiplierDraft('')
+  }
+
+  const saveCacheReadMultiplier = () => {
+    if (tokenPassthroughDisabled || !isCacheReadMultiplierValid) {
+      toast.error(t('settings.cacheReadMultiplierInvalid'))
+      return
+    }
+    setTokenPassthrough({ cacheReadMultiplier: cacheReadMultiplierValue }, {
+      onSuccess: (d) => {
+        toast.success(d.message)
+        cancelEditCacheReadMultiplier()
       },
       onError: (e) => toast.error(extractErrorMessage(e)),
     })
@@ -522,6 +555,51 @@ export function SettingsPanel({
                       : (tokenPassthroughData?.cacheReadBase ?? 0)}
                 </div>
                 <Button variant="ghost" size="sm" disabled={tokenPassthroughDisabled} onClick={startEditCacheReadBase}>
+                  <Pencil />
+                  {t('common.edit')}
+                </Button>
+              </>
+            )}
+          </Row>
+          <Row label={t('settings.cacheReadMultiplier')} desc={t('settings.cacheReadMultiplierDesc')}>
+            {editingCacheReadMultiplier ? (
+              <>
+                <div className="w-[160px]">
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    aria-label={t('settings.cacheReadMultiplier')}
+                    aria-invalid={!isCacheReadMultiplierValid}
+                    aria-describedby={!isCacheReadMultiplierValid ? 'cache-read-multiplier-error' : undefined}
+                    autoFocus
+                    disabled={tokenPassthroughDisabled}
+                    value={cacheReadMultiplierDraft}
+                    onChange={(e) => setCacheReadMultiplierDraft(e.target.value)}
+                  />
+                  {!isCacheReadMultiplierValid && (
+                    <div id="cache-read-multiplier-error" role="alert" className="mt-1 text-[11px] text-ink-3">
+                      {t('settings.cacheReadMultiplierInvalid')}
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" disabled={tokenPassthroughDisabled || !isCacheReadMultiplierValid} onClick={saveCacheReadMultiplier}>
+                  {t('common.save')}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={isSettingTokenPassthrough} onClick={cancelEditCacheReadMultiplier}>
+                  {t('common.cancel')}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className={FIELD_S}>
+                  {isLoadingTokenPassthrough
+                    ? t('common.loading')
+                    : isTokenPassthroughError
+                      ? t('common.loadFailed')
+                      : (tokenPassthroughData?.cacheReadMultiplier ?? 1)}
+                </div>
+                <Button variant="ghost" size="sm" disabled={tokenPassthroughDisabled} onClick={startEditCacheReadMultiplier}>
                   <Pencil />
                   {t('common.edit')}
                 </Button>

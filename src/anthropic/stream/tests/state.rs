@@ -3,7 +3,8 @@
 #[cfg(test)]
 mod tests {
     use crate::anthropic::stream::{
-        SseEvent, SseStateManager, StreamContext, count_token_chars, scale_cache_read_for_client_with,
+        SseEvent, SseStateManager, StreamContext, count_token_chars,
+        scale_cache_read_for_client_with, scale_cache_read_for_client_with_multiplier,
         scale_for_client, scale_for_client_with, split_thinking_and_visible, tokens_from_chars,
     };
     use crate::cache::PromptCacheUsage;
@@ -249,6 +250,18 @@ mod tests {
         assert_eq!(scale_cache_read_for_client_with(10_000, false, 45_000), 51_657);
         assert_eq!(scale_cache_read_for_client_with(10_000, true, 45_000), 55_000);
         assert_eq!(scale_cache_read_for_client_with(0, true, 45_000), 45_000);
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(5_000, true, 45_000, 2.0),
+            55_000
+        );
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(5_000, false, 0, 2.0),
+            6_658
+        );
+        assert_eq!(
+            scale_cache_read_for_client_with_multiplier(5_000, true, 0, 0.0),
+            0
+        );
     }
 
     #[test]

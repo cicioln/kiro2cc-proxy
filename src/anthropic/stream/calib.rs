@@ -41,15 +41,19 @@ pub const DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE: f64 = 0.6657;
 /// 用量记录或计费。默认关闭（0），可通过配置文件或 Admin API 自定义。
 pub const DEFAULT_CLIENT_CACHE_READ_BASE: i32 = 0;
 
-/// 客户端展示配置（直通开关、关闭直通时使用的系数、模拟缓存读取基数）。
+/// 客户端可见缓存读取量在现有展示口径基础上使用的倍率。
+pub const DEFAULT_CLIENT_CACHE_READ_MULTIPLIER: f64 = 1.0;
+
+/// 客户端展示配置（直通开关、关闭直通时使用的系数、模拟缓存读取基数与倍率）。
 ///
-/// 用同一把锁读写三者，避免热更新时读取到一半旧、一半新的配置。
+/// 用同一把锁读写四者，避免热更新时读取到一半旧、一半新的配置。
 /// main 启动时初始化，Admin API 运行时更新；直通开启不会丢弃已保存的系数。
-static CLIENT_TOKEN_DISPLAY_CONFIG: parking_lot::RwLock<(bool, f64, i32)> =
+static CLIENT_TOKEN_DISPLAY_CONFIG: parking_lot::RwLock<(bool, f64, i32, f64)> =
     parking_lot::RwLock::new((
         false,
         DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE,
         DEFAULT_CLIENT_CACHE_READ_BASE,
+        DEFAULT_CLIENT_CACHE_READ_MULTIPLIER,
     ));
 
 /// 所有配置入口共用的展示系数校验。
@@ -63,8 +67,14 @@ pub fn validate_client_token_display_scale(scale: f64) -> Result<(), &'static st
 
 /// 设置客户端 token 直通和展示系数（启动初始化、Admin API 热更新）。
 pub fn set_client_token_display_config(enabled: bool, display_scale: f64) -> Result<(), &'static str> {
-    let cache_read_base = client_token_display_config_with_cache_base().2;
-    set_client_token_display_config_with_base(enabled, display_scale, cache_read_base)
+    let (_, _, cache_read_base, cache_read_multiplier) =
+        client_token_display_config_with_cache_config();
+    set_client_token_display_config_with_base_and_multiplier(
+        enabled,
+        display_scale,
+        cache_read_base,
+        cache_read_multiplier,
+    )
 }
 
 /// 设置客户端 token 展示配置及模拟缓存基数。
@@ -73,20 +83,49 @@ pub fn set_client_token_display_config_with_base(
     display_scale: f64,
     cache_read_base: i32,
 ) -> Result<(), &'static str> {
+    let cache_read_multiplier = client_token_display_config_with_cache_config().3;
+    set_client_token_display_config_with_base_and_multiplier(
+        enabled,
+        display_scale,
+        cache_read_base,
+        cache_read_multiplier,
+    )
+}
+
+/// 设置客户端 token 展示配置、模拟缓存基数及真实缓存倍率。
+pub fn set_client_token_display_config_with_base_and_multiplier(
+    enabled: bool,
+    display_scale: f64,
+    cache_read_base: i32,
+    cache_read_multiplier: f64,
+) -> Result<(), &'static str> {
     validate_client_token_display_scale(display_scale)?;
     validate_client_cache_read_base(cache_read_base)?;
-    *CLIENT_TOKEN_DISPLAY_CONFIG.write() = (enabled, display_scale, cache_read_base);
+    validate_client_cache_read_multiplier(cache_read_multiplier)?;
+    *CLIENT_TOKEN_DISPLAY_CONFIG.write() = (
+        enabled,
+        display_scale,
+        cache_read_base,
+        cache_read_multiplier,
+    );
     Ok(())
 }
 
 /// 读取当前客户端展示配置的同一份快照。
 pub fn client_token_display_config() -> (bool, f64) {
-    let (enabled, display_scale, _) = *CLIENT_TOKEN_DISPLAY_CONFIG.read();
+    let (enabled, display_scale, _, _) = *CLIENT_TOKEN_DISPLAY_CONFIG.read();
     (enabled, display_scale)
 }
 
 /// 读取客户端 token 展示配置及模拟缓存基数。
 pub fn client_token_display_config_with_cache_base() -> (bool, f64, i32) {
+    let (enabled, display_scale, cache_read_base, _) =
+        client_token_display_config_with_cache_config();
+    (enabled, display_scale, cache_read_base)
+}
+
+/// 读取客户端 token 展示、模拟缓存基数及真实缓存倍率配置。
+pub fn client_token_display_config_with_cache_config() -> (bool, f64, i32, f64) {
     *CLIENT_TOKEN_DISPLAY_CONFIG.read()
 }
 
@@ -96,6 +135,15 @@ pub fn validate_client_cache_read_base(base: i32) -> Result<(), &'static str> {
         Ok(())
     } else {
         Err("cacheReadBase 必须是大于等于 0 的整数")
+    }
+}
+
+/// 校验客户端可见的真实缓存读取倍率。
+pub fn validate_client_cache_read_multiplier(multiplier: f64) -> Result<(), &'static str> {
+    if multiplier.is_finite() && multiplier >= 0.0 {
+        Ok(())
+    } else {
+        Err("cacheReadMultiplier 必须是大于等于 0 的有限数")
     }
 }
 
@@ -111,15 +159,28 @@ pub(crate) fn scale_for_client(n: i32, _model: &str) -> i32 {
     scale_for_client_with_scale(n, passthrough, display_scale)
 }
 
-/// 将真实缓存读取量转换为客户端可见值，并追加模拟缓存基数。
+/// 将真实缓存读取量转换为客户端可见值，应用缓存倍率并追加模拟缓存基数。
 ///
 /// 基数位于展示口径（缩放之后），这样设置 `45000` 时客户端始终能看到
-/// `45000 + 真实缓存读取量`，不会被默认的展示缩放再次折算。该函数只用于响应
+/// `45000 + 真实缓存读取量`，不会被默认的展示缩放再次折算。倍率作用于现有展示口径
+/// 处理后的真实缓存值。该函数只用于响应
 /// 序列化，内部用量记录仍使用未经追加的真实值。
 pub(crate) fn scale_cache_read_for_client(n: i32, _model: &str) -> i32 {
-    let (passthrough, display_scale, base) = client_token_display_config_with_cache_base();
+    let (passthrough, display_scale, base, multiplier) =
+        client_token_display_config_with_cache_config();
     let scaled = scale_for_client_with_scale(n, passthrough, display_scale);
+    let scaled = apply_cache_read_multiplier(scaled, multiplier);
     scaled.saturating_add(base)
+}
+
+fn apply_cache_read_multiplier(n: i32, multiplier: f64) -> i32 {
+    if n <= 0 || multiplier == 1.0 {
+        return n.max(0);
+    }
+    ((n as f64) * multiplier)
+        .ceil()
+        .max(0.0)
+        .min(i32::MAX as f64) as i32
 }
 
 fn scale_for_client_with_scale(n: i32, passthrough: bool, display_scale: f64) -> i32 {
@@ -143,6 +204,18 @@ pub(crate) fn scale_cache_read_for_client_with(
 ) -> i32 {
     scale_for_client_with_scale(n, passthrough, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE)
         .saturating_add(cache_read_base)
+}
+
+#[cfg(test)]
+pub(crate) fn scale_cache_read_for_client_with_multiplier(
+    n: i32,
+    passthrough: bool,
+    cache_read_base: i32,
+    cache_read_multiplier: f64,
+) -> i32 {
+    let scaled =
+        scale_for_client_with_scale(n, passthrough, DEFAULT_CLIENT_TOKEN_DISPLAY_SCALE);
+    apply_cache_read_multiplier(scaled, cache_read_multiplier).saturating_add(cache_read_base)
 }
 
 pub(crate) fn cap_input_tokens(
